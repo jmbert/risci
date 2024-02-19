@@ -1,0 +1,50 @@
+Register Encoding:
+	6 bits
+
+Op Determine:
+	[0:7]:	MAJOR
+
+Formats:
+	R:
+		[8:13]:		RD
+		[14:19]:	RS1
+		[20:25]:	RS2
+		[26:31]:	MINOR
+	I:
+		[8:13]:		RD
+		[14:15]:	MINOR
+		[16:31]:	IMMEDIATE (16 bits)
+
+Major Reserved = 00000000
+
+Major Load = 00000001, R Format:
+	Minor Variants:
+		L(B,H,W,Q) = XNNNSS:
+			BITS = (~(S))
+			N = N & (2 ^ BITS) -  1
+
+			ALIGN = (2^S)
+			WIDTH = ALIGN * 8
+
+			BEGIN = WIDTH * (N+1)
+			END = WIDTH * N
+
+			RD[BEGIN:END] <= (RS1 + (RS2 * ALIGN))
+			
+Major Load Immediate = 00000010, I Format:
+	Minor Variants:
+		LI(B,MB,MH,H) = NN:
+			BEGIN = 16 * (N+1)
+			END = 16 * N
+			RD[BEGIN:END] <= IMMEDIATE
+
+Major Store = 00000011, R Format:
+	Minor Variants:
+		S(B,H,W,Q): 	XNNNSS:
+			ALIGN = (2^S)
+			WIDTH = ALIGN * 8
+
+			BEGIN = WIDTH * (N+1)
+			END = WIDTH * N
+
+			RD[BEGIN:END] => (RS1 + (RS2 * ALIGN))
