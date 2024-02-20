@@ -10,13 +10,17 @@
 `define XN 1 << `XWDT
 `define IMMLEN 16
 
-`define RESERVED_MAJOR 		'b00000000
-`define LOAD_MAJOR 		'b00000001
-`define LOAD_IMMEDIATE_MAJOR 	'b00000010
-`define STORE_MAJOR 		'b00000011
+`define R_FORMAT 		3'b001
+`define I_FORMAT 		3'b010
+`define S_FORMAT 		3'b011
+`define U_FORMAT		3'b000
 
-`define PARALLELREADS 3
-`define PARALLELWRITES 3
+`define NOP_MAJOR 		'b00000
+`define LOAD_MAJOR 		'b00001
+`define LOAD_IMMEDIATE_MAJOR 	'b00001
+`define STORE_MAJOR 		'b00001
+
+`define PARALLELACCESS 3
 
 module risci_core (
 	output [`VLEN-1:0] iaddr,
@@ -48,16 +52,16 @@ module risci_core (
 	assign we = m_we;
 
 
-	reg [`XWDT-1:0] rreads[`PARALLELREADS-1:0];
-	reg [`XLEN-1:0] routs[`PARALLELREADS-1:0];
-	reg [`XWDT-1:0] rwrites[`PARALLELWRITES-1:0];
-	reg [`XLEN-1:0] rins[`PARALLELWRITES-1:0];
+	reg [`XWDT-1:0] rreads[`PARALLELACCESS-1:0];
+	reg [`XLEN-1:0] routs[`PARALLELACCESS-1:0];
+	reg [`XWDT-1:0] rwrites[`PARALLELACCESS-1:0];
+	reg [`XLEN-1:0] rins[`PARALLELACCESS-1:0];
 	reg r_we;
-	reg [1:0] rwsizes[`PARALLELWRITES-1:0];
-	reg [3:0] rwposs[`PARALLELWRITES-1:0];
+	reg [1:0] rwsizes[`PARALLELACCESS-1:0];
+	reg [2:0] rwposs[`PARALLELACCESS-1:0];
 
-
-	
+	reg [`DLEN-1:0] data_in;
+	assign data_in = din;
 
 	rfile xregs (
 		.rreads(rreads),
@@ -70,131 +74,179 @@ module risci_core (
 		.clk(clk)
 	);
 
-	reg [7:0] e_major;
-	reg [1:0] e_minor2;
-	reg [5:0] e_minor6;
-	reg [`XWDT-1:0] e_rd;
-	reg [`XWDT-1:0] e_rs1;
-	reg [`XWDT-1:0] e_rs2;
-	reg [`IMMLEN-1:0] e_imm;
+	/* Instruction Pipeline
+	 *
+	 * Each stage runs once every clock cycle in order, backwards from the writeback stage
+	 * Each stage has a set of registers that describes the instruction it is working on
+	 * After running, the stage forwards it's results to the next stage. This is why they are run backwards.
+	*/
 
-	reg [7:0] ma_major;
-	reg [`XWDT-1:0] ma_rd;
-	reg [`IMMLEN-1:0] ma_imm;
-	reg [5:0] ma_minor6;
-	reg [1:0] ma_minor2;
-	reg [`VLEN-1:0] ma_addr;
+	reg [`ILEN-1:0] i_fetch, i_decode, i_execute, i_memaccess, i_writeback;
+	reg fetch_stalled, decode_stalled, execute_stalled, memaccess_stalled, writeback_stalled;
 
-	reg [7:0] wb_major;
-	reg [`XWDT-1:0] wb_rd;
-	reg [`XLEN-1:0] wb_rs1;
-	reg [`XLEN-1:0] wb_rs2;
-	reg [`IMMLEN-1:0] wb_imm;
-	reg [5:0] wb_minor6;
-	reg [1:0] wb_minor2;
+	reg rlocks[`XN-1:0];
 
+	/* Instruction Pipeline
+	 *
+	 */
 
-	reg can_forward_e, can_forward_ma, can_forward_wb;
-
-	always @(posedge can_forward_e) begin
-		// Decode and forward to execute stage
-		e_major = iin[7:0];
-		e_rd = iin[13:8];
-		e_rs1 = iin[19:14];
-		e_rs2 = iin[25:20];
-		e_minor6 = iin[31:26];
-		e_minor2 = iin[15:14];
-		e_imm = iin[31:16];
-		
-		$write("DE MAJOR: %b\n", e_major);
-		$write("%x => %x\n", pc, iin);
-		pc = pc + 4;
-		can_forward_e = 0;
-	end
-
-	always @(posedge can_forward_ma) begin
-		// Execute
-		$write("E MAJOR: %b\n", e_major);
-		case (e_major)
-			`LOAD_MAJOR: begin
-				rreads[0] = e_rs1;
-				rreads[1] = e_rs2;
-			end
-			`LOAD_IMMEDIATE_MAJOR: begin
-				
-			end
-
-			default: begin end// TODO - exception support 
-		endcase
-
-		// Forward to MA stage
-
-		ma_major = e_major;
-		ma_minor2 = e_minor2;
-		ma_rd = e_rd;
-		ma_imm = e_imm;
-
-		can_forward_e = 1;
-		can_forward_ma = 0;
-	end
-
-	
-	always @(posedge can_forward_wb) begin
-		// Memory Access
-		$write("MA MAJOR: %b\n", ma_major);
-		case (ma_major)
-			`LOAD_MAJOR: begin
-				addr = routs[0] + (routs[1] * (1 << e_minor6[1:0]));
-				m_re = 1;
-			end
-			`LOAD_IMMEDIATE_MAJOR: begin
-				addr = routs[0] + (routs[1] * (1 << e_minor6[1:0]));
-				
-				m_we = 1;
-			end
-
-			default: begin end// TODO - exception support 
-		endcase
-
-		// Forward to writeback stage
-		wb_major = ma_major;
-		wb_minor2 = ma_minor2;
-		wb_rd = ma_rd;
-		wb_imm = ma_imm;
-
-		can_forward_ma = 1;
-		can_forward_wb = 0;
-	end
+	 always @(posedge clk ) begin
+		$strobe("FETCH: %x", i_fetch);
+		$strobe("DECODE: %x", i_decode);
+		$strobe("EXECUTE: %x", i_execute);
+		$strobe("MEMACCESS: %x", i_memaccess);
+		$strobe("WRITEBACK: %x", i_writeback);
+	 end
 
 	always @(posedge clk) begin
-		r_we = 0;
-		// Write back
-		$write("WB MAJOR: %b\n", wb_major);
-		case (wb_major)
-			`LOAD_MAJOR: begin
-				rwrites[2] = wb_rd;
-				rwsizes[2] = wb_minor6[1:0];
-				rwposs[2] = wb_minor6[5:2];
-				rins[2] = din;
-				m_re = 0;
-			end
-			`STORE_MAJOR: begin
-				m_we = 0;
-			end
-			`LOAD_IMMEDIATE_MAJOR: begin
-				
-				rwrites[2] = wb_rd;
-				rwsizes[2] = 'b01;
-				rwposs[2][1:0] = wb_minor2;
-				rins[2][15:0] = wb_imm;
-				r_we = 1;
-				$write("%x = %x\n", wb_rd, wb_imm);
-			end
+		if (!fetch_stalled) begin // Fetch is receiving new values
+			i_fetch <= iin;
+		end
 
-			default: begin 
-			end// TODO - exception support 
-		endcase
-		can_forward_wb = 1;
+		if (!decode_stalled) begin // Decode is receiving new values
+			if (!fetch_stalled) begin // Fetch is sending new values
+				i_decode <= i_fetch;
+			end else begin	// Fetch is stalled, load a NOP
+				i_decode <= 0;
+			end
+		end
+
+		if (!execute_stalled) begin // Execute is receiving new values
+			if (!decode_stalled) begin // Decode is sending new values
+				i_execute <= i_decode;
+			end else begin	// Decode is stalled, load a NOP
+				i_execute <= 0;
+			end
+		end
+
+		if (!memaccess_stalled) begin 
+			if (!execute_stalled) begin 
+				i_memaccess <= i_execute;
+			end else begin	
+				i_memaccess <= 0;
+			end
+		end
+
+		if (!writeback_stalled) begin 
+			if (!memaccess_stalled) begin 
+				i_writeback <= i_memaccess;
+			end else begin	// 
+				i_writeback <= 0;
+			end
+		end
 	end
-	
+
+	// Fetch
+	always @(posedge clk) begin
+		pc = pc + 4;
+	end
+
+	// Decode
+	always @(posedge clk) begin
+		decode_stalled = 0;
+		fetch_stalled = 0;
+
+		case (i_decode[2:0]) // Decoding varies by format
+			`R_FORMAT: begin
+				if (!rlocks[i_decode[19:14]] && !rlocks[i_decode[25:20]]) begin
+					rreads[0] = i_decode[19:14]; // RS1
+					rreads[1] = i_decode[25:20]; // RS2
+					rlocks[i_decode[13:8]] = 1;  // RD
+				end else begin
+					decode_stalled = 1;
+					fetch_stalled = 1;
+				end
+			end 
+			`I_FORMAT: begin
+				rlocks[i_decode[13:8]] = 1;  // RD
+			end
+			default: begin end // TODO - INVI Exception here
+		endcase
+	end
+
+	reg [`VLEN-1:0] ma_addr; /* Address to access, computed during execute */
+
+	// Execute
+	always @(posedge clk) begin
+		case (i_execute[2:0]) // Vary by format
+			`R_FORMAT: begin
+				case (i_execute[7:3])
+					`LOAD_MAJOR: begin
+						ma_addr = routs[0] + (routs[1] * (1 << (i_execute[27:26])));  // This Assignment isn't working
+					end 
+					default: begin end // TODO - INVI Exception here
+				endcase
+			end
+			`I_FORMAT: begin
+				case (i_execute[7:3])
+					`LOAD_IMMEDIATE_MAJOR: begin end 
+					default: begin end // TODO - INVI Exception here
+				endcase
+			end 
+			default: begin end // TODO - INVI Exception here
+		endcase
+	end
+
+
+	// Memory Access
+	always @(posedge clk) begin
+		case (i_memaccess[2:0]) // Vary by format
+			`R_FORMAT: begin
+				case (i_memaccess[7:3])
+					`LOAD_MAJOR: begin
+						addr = ma_addr;
+						m_re = 1;
+					end 
+					default: begin end // TODO - INVI Exception here
+				endcase
+			end
+			`I_FORMAT: begin
+				case (i_memaccess[7:3])
+					`LOAD_IMMEDIATE_MAJOR: begin end 
+					default: begin end // TODO - INVI Exception here
+				endcase
+			end 
+			default: begin end // TODO - INVI Exception here
+		endcase
+	end
+
+
+	// Register Writeback
+	always @(posedge clk) begin
+		r_we = 0;
+		case (i_writeback[2:0]) // Vary by format
+			`R_FORMAT: begin
+				case (i_writeback[7:3])
+					`LOAD_MAJOR: begin
+						rwrites[0] = i_writeback[13:8]; 
+
+						rins[0] = data_in; // This Assignment isn't working
+
+						rwposs[0] = i_writeback[30:28];
+						rwsizes[0] = i_writeback[27:26];
+						r_we = 1;
+						
+						rlocks[i_writeback[13:8]] = 0;
+					end 
+					default: begin end // TODO - INVI Exception here
+				endcase
+			end
+			`I_FORMAT: begin
+				case (i_writeback[7:3])
+					`LOAD_IMMEDIATE_MAJOR: begin
+						rwrites[0] = i_writeback[13:8]; 
+						rins[0] = {4{i_writeback[31:16]}};
+						rwposs[0] = {1'b0, i_writeback[15:14]};
+						rwsizes[0] = 'b01; // 16 bits
+						r_we = 1;
+
+						rlocks[i_writeback[13:8]] = 0; // Unlock RD
+					end 
+					default: begin end // TODO - INVI Exception here
+				endcase
+			end 
+			default: begin end // TODO - INVI Exception here
+		endcase
+	end
+
 endmodule
