@@ -15,9 +15,15 @@ module rlocks #(
 	reg [XN-1:0] rlocks_stored;
 	assign rlocks = rlocks_stored;
 
-	always_ff @( clk ) begin
-		rlocks_stored[rset] <= 1;
-		rlocks_stored[rclear] <= 0;
+	always_ff @( posedge clk ) begin
+		if (rclear != 0) begin
+			rlocks_stored[rclear] <= 0;
+		end
+		if (rset != 0) begin
+			rlocks_stored[rset] <= 1;
+		end
+
+		$strobe("LOCKS: %b", rlocks_stored);
 	end
 
 endmodule

@@ -112,7 +112,7 @@ module risci_core (
 	reg fetch_stalled, decode_stalled, execute_stalled, memaccess_stalled, writeback_stalled;
 
 	reg [`VLEN-1:0] ma_addr; /* Address to access, computed during execute */
-	reg [`DLEN-1:0] ma_data; /* Data for ma stage */
+	reg [`DLEN-1:0] e_result, ma_data, wb_data; /* Data for ma stage */
 
 	/* Instruction Pipeline
 	 *
@@ -150,6 +150,7 @@ module risci_core (
 		if (!memaccess_stalled) begin 
 			if (!execute_stalled) begin 
 				i_memaccess <= i_execute;
+				ma_data <= e_result;
 			end else begin	
 				i_memaccess <= 0;
 			end
@@ -158,6 +159,7 @@ module risci_core (
 		if (!writeback_stalled) begin 
 			if (!memaccess_stalled) begin 
 				i_writeback <= i_memaccess;
+				wb_data <= ma_data;
 			end else begin	// 
 				i_writeback <= 0;
 			end
@@ -176,7 +178,7 @@ module risci_core (
 
 		case (i_decode[2:0]) // Decoding varies by format
 			`R_FORMAT: begin
-				if (!rlocks_stored[i_decode[19:14]] && !rlocks_stored[i_decode[25:20]]) begin
+				if (!rlocks_stored[i_decode[19:14]] && !rlocks_stored[i_decode[25:20]] && !rlocks_stored[i_decode[13:8]]) begin
 					rreads[0] = i_decode[19:14]; // RS1
 					rreads[1] = i_decode[25:20]; // RS2
 					rset = i_decode[13:8];  // RD	
@@ -189,6 +191,7 @@ module risci_core (
 				rset = i_decode[13:8];  // RD
 			end
 			`S_FORMAT: begin
+				rset = 0;
 				if (!rlocks_stored[i_decode[19:14]] && !rlocks_stored[i_decode[25:20]] && !rlocks_stored[i_decode[13:8]]) begin
 					rreads[0] = i_decode[19:14]; // RS1
 					rreads[1] = i_decode[25:20]; // RS2
@@ -210,12 +213,16 @@ module risci_core (
 					`LOAD_MAJOR: begin
 						ma_addr = routs[0] + (routs[1] * (1 << (i_execute[27:26])));
 					end 
+					`INT_A_MAJOR: begin
+						e_result = routs[0] + routs[1];
+					end
 					default: begin end // TODO - INVI Exception here
 				endcase
 			end
 			`I_FORMAT: begin
 				case (i_execute[7:3])
-					`LOAD_IMMEDIATE_MAJOR: begin end 
+					`LOAD_IMMEDIATE_MAJOR: begin
+					end
 					default: begin end // TODO - INVI Exception here
 				endcase
 			end 
@@ -223,7 +230,7 @@ module risci_core (
 				case (i_execute[7:3])
 					`STORE_MAJOR: begin
 						ma_addr = routs[0] + (routs[1] * (1 << (i_execute[27:26])));
-						ma_data = routs[2];
+						e_result = routs[2];
 					end 
 					default: begin end // TODO - INVI Exception here
 				endcase
@@ -242,6 +249,9 @@ module risci_core (
 						addr = ma_addr;
 						m_re = 1;
 					end 
+					`INT_A_MAJOR: begin
+						
+					end
 					default: begin end // TODO - INVI Exception here
 				endcase
 			end
@@ -285,6 +295,17 @@ module risci_core (
 						
 						rclear = i_writeback[13:8];
 					end 
+					`INT_A_MAJOR: begin
+						rwrites[0] = i_writeback[13:8]; 
+
+						rins[0] = wb_data;
+
+						rwposs[0] = i_writeback[30:28];
+						rwsizes[0] = i_writeback[27:26];
+						r_we = 1;
+						
+						rclear = i_writeback[13:8];
+					end
 					default: begin end // TODO - INVI Exception here
 				endcase
 			end
@@ -305,7 +326,6 @@ module risci_core (
 			`S_FORMAT: begin
 				case (i_writeback[7:3])
 					`STORE_MAJOR: begin
-
 					end
 					default: begin end // TODO - INVI Exception here
 				endcase
