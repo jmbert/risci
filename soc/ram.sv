@@ -24,35 +24,35 @@ module ram #(
 	wire [9:0] addrreal2 = addr2[9:0];
 
 	initial begin
-	    	mem[7] =  8'b0001_010; 		// LIB X2, 0x0050
+	    	mem[7] =  8'b00001_010; 	// LIB X2, 0x0050
 		mem[6] =  8'b00_000010;
 		mem[5] =  8'b01010000;
 		mem[4] =  8'b00000000;
 
-	    	mem[11] =  8'b0001_010; 	// LIB X3, 0x0001
-		mem[10] =  8'b00_000011;
+	    	mem[11] = 8'b00001_010; 	// LIB X3, 0x0001
+		mem[10] = 8'b00_000011;
 		mem[9] =  8'b00000001;
 		mem[8] =  8'b00000000;
 
-	    	mem[15] = 8'b0001_010; 		// LIB X1, 0x0010
+	    	mem[15] = 8'b00001_010; 	// LIB X1, 0x0050
 		mem[14] = 8'b00_000001;
-		mem[13] =  8'b00010000;
-		mem[12] =  8'b00000000;
+		mem[13] = 8'b01010000;
+		mem[12] = 8'b00000000;
 
-	    	mem[19] = 8'b0001_011;		// SH X1, X2, X1
+	    	mem[19] = 8'b00001_011;		// SH X1, X2, X1 => SH X32, X0, X1
 		mem[18] = 8'b10_000001;
 		mem[17] = 8'b0001_0000;
 		mem[16] = 8'b000001_00;
 
-	    	mem[23] = 8'b0010_001;		// ADD X1, X1, X3
+	    	mem[23] = 8'b00010_001;		// ADD X1, X1, X3
 		mem[22] = 8'b01_000001;
 		mem[21] = 8'b0011_0000;
 		mem[20] = 8'b000010_00;
-/*
-	    	mem[27] = 8'b0001_100;		// BEQ X2, X0, -2
-		mem[26] = 8'b00_1110_10;
-		mem[25] = 8'b1111_0000;
-		mem[24] = 8'b11111111;*/
+
+	    	mem[27] = 8'b00001_100;		// BEQ X1, X0, -2
+		mem[26] = 8'b01_1110_10;
+		mem[25] = 8'b0000_0000;
+		mem[24] = 8'b111111_00;
 	end
 
 	always_comb begin
@@ -72,6 +72,7 @@ module ram #(
 			out1[47:40] = mem[addrreal1+5];
 			out1[55:48] = mem[addrreal1+6];
 			out1[63:56] = mem[addrreal1+7];
+			$strobe("READ: %x => %x", addrreal1, out1);
 		end
 	end
 
@@ -91,6 +92,7 @@ module ram #(
 					end
 				end
 			end
+			$strobe("WRITE: %x => %x", in, addrreal1);
 		end
 	end
 endmodule

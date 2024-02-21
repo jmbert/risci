@@ -27,6 +27,10 @@
 `define STORE_MAJOR 		5'b00001
 
 `define BRANCH_MAJOR		5'b00001
+`define BEQ			2'b00
+`define BNE			2'b01
+`define BGE			2'b10
+`define BLT			2'b11
 
 `define PARALLELACCESS 3
 
@@ -48,7 +52,7 @@ module risci_core (
 	input clk
 );
 	reg [`VLEN-1:0] addr;
-	reg [`VLEN-1:0] pc;
+	reg [`VLEN-1:0] pc, branch_pc;
 
 	reg m_re;
 	reg m_we;
@@ -88,6 +92,7 @@ module risci_core (
 		.clk(clk)
 	);
 
+	reg taken_branch;
 
 	reg [`XWDT-1:0] rset, rclear;
 	reg [`XN-1:0] rlocks_stored;
@@ -109,6 +114,7 @@ module risci_core (
 
 
 	reg [`ILEN-1:0] i_fetch, i_decode, i_execute, i_memaccess, i_writeback;
+	reg [`VLEN-1:0] pc_fetch, pc_decode, pc_execute, pc_memaccess, pc_writeback;
 	reg fetch_stalled, decode_stalled, execute_stalled, memaccess_stalled, writeback_stalled;
 
 	reg [`VLEN-1:0] ma_addr; /* Address to access, computed during execute */
@@ -119,21 +125,23 @@ module risci_core (
 	 */
 
 	always @(posedge clk ) begin
-		$strobe("FETCH: %x", i_fetch);
-		$strobe("DECODE: %x", i_decode);
-		$strobe("EXECUTE: %x", i_execute);
-		$strobe("MEMACCESS: %x", i_memaccess);
-		$strobe("WRITEBACK: %x", i_writeback);
+		$strobe("FETCH: %x FROM %x", i_fetch, pc_fetch);
+		$strobe("DECODE: %x FROM %x", i_decode, pc_decode);
+		$strobe("EXECUTE: %x FROM %x", i_execute, pc_execute);
+		$strobe("MEMACCESS: %x FROM %x", i_memaccess, pc_memaccess);
+		$strobe("WRITEBACK: %x FROM %x", i_writeback, pc_writeback);
 	end
 
 	always @(posedge clk) begin
 		if (!fetch_stalled) begin // Fetch is receiving new values
 			i_fetch <= iin;
+			pc_fetch <= pc;
 		end
 
 		if (!decode_stalled) begin // Decode is receiving new values
 			if (!fetch_stalled) begin // Fetch is sending new values
 				i_decode <= i_fetch;
+				pc_decode <= pc_fetch;
 			end else begin	// Fetch is stalled, load a NOP
 				i_decode <= 0;
 			end
@@ -142,6 +150,7 @@ module risci_core (
 		if (!execute_stalled) begin // Execute is receiving new values
 			if (!decode_stalled) begin // Decode is sending new values
 				i_execute <= i_decode;
+				pc_execute <= pc_decode;
 			end else begin	// Decode is stalled, load a NOP
 				i_execute <= 0;
 			end
@@ -150,6 +159,7 @@ module risci_core (
 		if (!memaccess_stalled) begin 
 			if (!execute_stalled) begin 
 				i_memaccess <= i_execute;
+				pc_memaccess <= pc_execute;
 				ma_data <= e_result;
 			end else begin	
 				i_memaccess <= 0;
@@ -159,6 +169,7 @@ module risci_core (
 		if (!writeback_stalled) begin 
 			if (!memaccess_stalled) begin 
 				i_writeback <= i_memaccess;
+				pc_writeback <= pc_memaccess;
 				wb_data <= ma_data;
 			end else begin	// 
 				i_writeback <= 0;
@@ -168,11 +179,18 @@ module risci_core (
 
 	// Fetch
 	always @(posedge clk) begin
-		pc <= pc + 4;
+		if (taken_branch) begin
+			pc <= branch_pc;
+		end else begin
+			if (!fetch_stalled) begin
+				pc <= pc + 4;
+			end 
+		end
+		$strobe("PC: %x", pc);
 	end
 
 	// Decode
-	always_comb begin
+	always_latch begin
 		decode_stalled = 0;
 		fetch_stalled = 0;
 
@@ -201,12 +219,26 @@ module risci_core (
 					fetch_stalled = 1;
 				end
 			end
-			default: begin end // TODO - INVI Exception here
+			`U_FORMAT: begin
+				rset = 0;
+			end
+			`B_FORMAT: begin
+				rset = 0;
+				if (!rlocks_stored[i_decode[19:14]] && !rlocks_stored[i_decode[25:20]] && !rlocks_stored[i_decode[13:8]]) begin
+					rreads[0] = i_decode[19:14]; // RS1
+					rreads[1] = i_decode[25:20]; // RS2
+				end else begin
+					decode_stalled = 1;
+					fetch_stalled = 1;
+				end
+			end
+			default: begin rset = 0; end // TODO - INVI Exception here
 		endcase
 	end
 
 	// Execute
 	always_comb begin
+		taken_branch = 0;
 		case (i_execute[2:0]) // Vary by format
 			`R_FORMAT: begin
 				case (i_execute[7:3])
@@ -235,6 +267,47 @@ module risci_core (
 					default: begin end // TODO - INVI Exception here
 				endcase
 			end
+			`B_FORMAT: begin
+				case (i_execute[7:3])
+					`BRANCH_MAJOR: begin
+						case (i_execute[9:8])
+							`BEQ: begin
+								if (routs[0] == routs[1]) begin
+									branch_pc = pc_execute + {{52{i_execute[31]}}, i_execute[31:26], i_execute[13:10], 2'b00};
+									taken_branch = 1;
+								end else begin
+									taken_branch = 0;
+								end
+							end
+							`BNE: begin
+								if (routs[0] != routs[1]) begin
+									branch_pc = pc_execute + {{52{i_execute[31]}}, i_execute[31:26], i_execute[13:10], 2'b00};
+									taken_branch = 1;
+								end else begin
+									taken_branch = 0;
+								end
+							end
+							`BGE: begin
+								if (routs[0] >= routs[1]) begin
+									branch_pc = pc_execute + {{52{i_execute[31]}}, i_execute[31:26], i_execute[13:10], 2'b00};
+									taken_branch = 1;
+								end else begin
+									taken_branch = 0;
+								end
+							end
+							`BLT: begin
+								if (routs[0] < routs[1]) begin
+									branch_pc = pc_execute + {{52{i_execute[31]}}, i_execute[31:26], i_execute[13:10], 2'b00};
+									taken_branch = 1;
+								end else begin
+									taken_branch = 0;
+								end
+							end
+						endcase
+					end
+					default: begin end
+				endcase
+			end
 			default: begin end // TODO - INVI Exception here
 		endcase
 	end
@@ -256,10 +329,6 @@ module risci_core (
 				endcase
 			end
 			`I_FORMAT: begin
-				case (i_memaccess[7:3])
-					`LOAD_IMMEDIATE_MAJOR: begin end 
-					default: begin end // TODO - INVI Exception here
-				endcase
 			end 
 			`S_FORMAT: begin
 				case (i_memaccess[7:3])
@@ -271,6 +340,8 @@ module risci_core (
 					end 
 					default: begin end // TODO - INVI Exception here
 				endcase
+			end
+			`U_FORMAT: begin
 			end
 			default: begin end // TODO - INVI Exception here
 		endcase
@@ -329,6 +400,8 @@ module risci_core (
 					end
 					default: begin end // TODO - INVI Exception here
 				endcase
+			end
+			`U_FORMAT: begin
 			end
 			default: begin end // TODO - INVI Exception here
 		endcase
