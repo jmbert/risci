@@ -24,22 +24,25 @@ module ram #(
 	wire [9:0] addrreal2 = addr2[9:0];
 
 	initial begin
-	    	mem[7] =  8'b0001_010; 	// LIB X1, 0x0004
+	    	mem[7] =  8'b0001_010; 		// LIB X1, 0x0004
 		mem[6] =  8'b00_000001;
 		mem[5] =  8'b00000100;
 		mem[4] =  8'b00000000;
 
-	    	mem[11] = 8'b0001_001;	// LW X2, X1, X0
+	    	mem[11] = 8'b0001_001;		// LW X2, X1, X0
 		mem[10] = 8'b01_000010;
 		mem[9] =  8'b0000_0000;
 		mem[8] =  8'b000010_00;
 	end
 
-	always @(posedge clk ) begin
+	always_comb begin
 		out2[7:0] = mem[addrreal2];
 		out2[15:8] = mem[addrreal2+1];
 		out2[23:16] = mem[addrreal2+2];
 		out2[31:24] = mem[addrreal2+3];
+	end
+
+	always_latch begin
 		if (re) begin
 			out1[7:0] = mem[addrreal1];
 			out1[15:8] = mem[addrreal1+1];
@@ -49,8 +52,10 @@ module ram #(
 			out1[47:40] = mem[addrreal1+5];
 			out1[55:48] = mem[addrreal1+6];
 			out1[63:56] = mem[addrreal1+7];
-			$strobe("READ: %x <= %x", out1, addrreal1);
 		end
+	end
+
+	always_latch begin
 		if (we) begin
 			mem[addrreal1] = in[7:0];
 			if (len > 'b00) begin

@@ -7,12 +7,12 @@ module mmu #(
 	ILEN=32
 ) (
 	// To Core
-	input [`VLEN-1:0] iaddr,
-	output [`ILEN-1:0] iin,
+	input [VLEN-1:0] iaddr,
+	output [ILEN-1:0] iin,
 
-	input [`VLEN-1:0] daddr,
-	output [`DLEN-1:0] din,
-	input [`DLEN-1:0] dout,
+	input [VLEN-1:0] daddr,
+	output [DLEN-1:0] din,
+	input [DLEN-1:0] dout,
 	input [1:0] dlen,
 	input we,
 	input re,

@@ -15,7 +15,7 @@ module rfile #(
 	input we,
 	input clk
 );
-	reg [XLEN-1:0] xregs[XN-1:0];
+	reg [XLEN-1:0] regs[XN-1:0];
 	reg [XLEN-1:0] routs_r[PARALLELACCESS-1:0];
 	assign routs = routs_r;
 
@@ -26,18 +26,18 @@ module rfile #(
 				if (we) begin
 					case (rwsizes[i])
 						'b00:
-							xregs[rwrites[i]][rwposs[i]*8+:8] <= rins[i][7:0];
+							regs[rwrites[i]][rwposs[i]*8+:8] <= rins[i][7:0];
 						'b01:
-							xregs[rwrites[i]][rwposs[i]*16+:16] <= rins[i][15:0];
+							regs[rwrites[i]][rwposs[i]*16+:16] <= rins[i][15:0];
 						'b10:
-							xregs[rwrites[i]][rwposs[i]*32+:32] <= rins[i][31:0];
+							regs[rwrites[i]][rwposs[i]*32+:32] <= rins[i][31:0];
 						'b11:
-							xregs[rwrites[i]] <= rins[i]; 
+							regs[rwrites[i]] <= rins[i]; 
 						default: begin end
 					endcase
-					$strobe("WRITE DONE: %x <= %x (%x)", rwrites[i], xregs[rwrites[i]], rins[i]);
+					$strobe("WRITE DONE: %x <= %x", rwrites[i], regs[rwrites[i]]);
 				end
-				routs_r[i] <= xregs[rreads[i]];
+				routs_r[i] <= regs[rreads[i]];
 				$strobe("READ DONE: %x <= %x", routs_r[i], rreads[i]);
 			end
 		end

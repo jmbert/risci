@@ -1,4 +1,5 @@
 `include "core/rfile.sv"
+`include "core/rlocks.sv"
 
 `define VLEN 64
 `define DLEN 64
@@ -7,7 +8,7 @@
 
 `define XLEN 64
 `define XWDT 6
-`define XN 1 << `XWDT
+`define XN 64
 `define IMMLEN 16
 
 `define R_FORMAT 		3'b001
@@ -40,16 +41,26 @@ module risci_core (
 	input clk
 );
 	reg [`VLEN-1:0] addr;
-
-	assign daddr = addr;
-
 	reg [`VLEN-1:0] pc;
-	assign iaddr = pc;
 
 	reg m_re;
-	assign re = m_re;
 	reg m_we;
+
+	always_comb begin
+		m_we = 0;
+	end
+
+	reg [`DLEN-1:0] datain;
+
+
+	assign daddr = addr;
+	assign iaddr = pc;
+	assign re = m_re;
 	assign we = m_we;
+
+	always @(din) begin
+		datain <= din;
+	end
 
 
 	reg [`XWDT-1:0] rreads[`PARALLELACCESS-1:0];
@@ -59,9 +70,6 @@ module risci_core (
 	reg r_we;
 	reg [1:0] rwsizes[`PARALLELACCESS-1:0];
 	reg [2:0] rwposs[`PARALLELACCESS-1:0];
-
-	reg [`DLEN-1:0] data_in;
-	assign data_in = din;
 
 	rfile xregs (
 		.rreads(rreads),
@@ -74,6 +82,18 @@ module risci_core (
 		.clk(clk)
 	);
 
+
+	reg [`XWDT-1:0] rset, rclear;
+	reg [`XN-1:0] rlocks_stored;
+
+	rlocks locks (
+		.rset(rset),
+		.rclear(rclear),
+		.rlocks(rlocks_stored),
+
+		.clk(clk)
+	);
+
 	/* Instruction Pipeline
 	 *
 	 * Each stage runs once every clock cycle in order, backwards from the writeback stage
@@ -81,22 +101,23 @@ module risci_core (
 	 * After running, the stage forwards it's results to the next stage. This is why they are run backwards.
 	*/
 
+
 	reg [`ILEN-1:0] i_fetch, i_decode, i_execute, i_memaccess, i_writeback;
 	reg fetch_stalled, decode_stalled, execute_stalled, memaccess_stalled, writeback_stalled;
 
-	reg rlocks[`XN-1:0];
+	var [`VLEN-1:0] ma_addr; /* Address to access, computed during execute */
 
 	/* Instruction Pipeline
 	 *
 	 */
 
-	 always @(posedge clk ) begin
+	always @(posedge clk ) begin
 		$strobe("FETCH: %x", i_fetch);
 		$strobe("DECODE: %x", i_decode);
 		$strobe("EXECUTE: %x", i_execute);
 		$strobe("MEMACCESS: %x", i_memaccess);
 		$strobe("WRITEBACK: %x", i_writeback);
-	 end
+	end
 
 	always @(posedge clk) begin
 		if (!fetch_stalled) begin // Fetch is receiving new values
@@ -138,41 +159,40 @@ module risci_core (
 
 	// Fetch
 	always @(posedge clk) begin
-		pc = pc + 4;
+		pc <= pc + 4;
 	end
 
 	// Decode
-	always @(posedge clk) begin
+	always_comb begin
 		decode_stalled = 0;
 		fetch_stalled = 0;
 
 		case (i_decode[2:0]) // Decoding varies by format
 			`R_FORMAT: begin
-				if (!rlocks[i_decode[19:14]] && !rlocks[i_decode[25:20]]) begin
+				if (!rlocks_stored[i_decode[19:14]] && !rlocks_stored[i_decode[25:20]]) begin
 					rreads[0] = i_decode[19:14]; // RS1
 					rreads[1] = i_decode[25:20]; // RS2
-					rlocks[i_decode[13:8]] = 1;  // RD
+					rset = i_decode[13:8];  // RD
+					
 				end else begin
 					decode_stalled = 1;
 					fetch_stalled = 1;
 				end
 			end 
 			`I_FORMAT: begin
-				rlocks[i_decode[13:8]] = 1;  // RD
+				rset = i_decode[13:8];  // RD
 			end
 			default: begin end // TODO - INVI Exception here
 		endcase
 	end
 
-	reg [`VLEN-1:0] ma_addr; /* Address to access, computed during execute */
-
 	// Execute
-	always @(posedge clk) begin
+	always_comb begin
 		case (i_execute[2:0]) // Vary by format
 			`R_FORMAT: begin
 				case (i_execute[7:3])
 					`LOAD_MAJOR: begin
-						ma_addr = routs[0] + (routs[1] * (1 << (i_execute[27:26])));  // This Assignment isn't working
+						ma_addr = routs[0] + (routs[1] * (1 << (i_execute[27:26])));
 					end 
 					default: begin end // TODO - INVI Exception here
 				endcase
@@ -189,7 +209,7 @@ module risci_core (
 
 
 	// Memory Access
-	always @(posedge clk) begin
+	always_comb begin
 		case (i_memaccess[2:0]) // Vary by format
 			`R_FORMAT: begin
 				case (i_memaccess[7:3])
@@ -211,8 +231,9 @@ module risci_core (
 	end
 
 
+
 	// Register Writeback
-	always @(posedge clk) begin
+	always_comb begin
 		r_we = 0;
 		case (i_writeback[2:0]) // Vary by format
 			`R_FORMAT: begin
@@ -220,13 +241,13 @@ module risci_core (
 					`LOAD_MAJOR: begin
 						rwrites[0] = i_writeback[13:8]; 
 
-						rins[0] = data_in; // This Assignment isn't working
+						rins[0] = datain; // Assignment not working
 
 						rwposs[0] = i_writeback[30:28];
 						rwsizes[0] = i_writeback[27:26];
 						r_we = 1;
 						
-						rlocks[i_writeback[13:8]] = 0;
+						rclear = i_writeback[13:8];
 					end 
 					default: begin end // TODO - INVI Exception here
 				endcase
@@ -240,7 +261,7 @@ module risci_core (
 						rwsizes[0] = 'b01; // 16 bits
 						r_we = 1;
 
-						rlocks[i_writeback[13:8]] = 0; // Unlock RD
+						rclear = i_writeback[13:8]; // Unlock RD
 					end 
 					default: begin end // TODO - INVI Exception here
 				endcase
@@ -250,3 +271,4 @@ module risci_core (
 	end
 
 endmodule
+
