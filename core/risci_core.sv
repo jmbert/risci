@@ -11,15 +11,22 @@
 `define XN 64
 `define IMMLEN 16
 
+`define U_FORMAT		3'b000
 `define R_FORMAT 		3'b001
 `define I_FORMAT 		3'b010
 `define S_FORMAT 		3'b011
-`define U_FORMAT		3'b000
+`define B_FORMAT		3'b100
 
-`define NOP_MAJOR 		'b00000
-`define LOAD_MAJOR 		'b00001
-`define LOAD_IMMEDIATE_MAJOR 	'b00001
-`define STORE_MAJOR 		'b00001
+`define NOP_MAJOR 		5'b00000
+
+`define LOAD_MAJOR 		5'b00001
+`define INT_A_MAJOR 		5'b00010
+
+`define LOAD_IMMEDIATE_MAJOR 	5'b00001
+
+`define STORE_MAJOR 		5'b00001
+
+`define BRANCH_MAJOR		5'b00001
 
 `define PARALLELACCESS 3
 
@@ -46,13 +53,12 @@ module risci_core (
 	reg m_re;
 	reg m_we;
 
-	always_comb begin
-		m_we = 0;
-	end
-
 	reg [`DLEN-1:0] datain;
+	reg [`DLEN-1:0] dataout;
+	reg [1:0] datalen;
 
-
+	assign dlen = datalen;
+	assign dout = dataout;
 	assign daddr = addr;
 	assign iaddr = pc;
 	assign re = m_re;
@@ -105,7 +111,8 @@ module risci_core (
 	reg [`ILEN-1:0] i_fetch, i_decode, i_execute, i_memaccess, i_writeback;
 	reg fetch_stalled, decode_stalled, execute_stalled, memaccess_stalled, writeback_stalled;
 
-	var [`VLEN-1:0] ma_addr; /* Address to access, computed during execute */
+	reg [`VLEN-1:0] ma_addr; /* Address to access, computed during execute */
+	reg [`DLEN-1:0] ma_data; /* Data for ma stage */
 
 	/* Instruction Pipeline
 	 *
@@ -172,8 +179,7 @@ module risci_core (
 				if (!rlocks_stored[i_decode[19:14]] && !rlocks_stored[i_decode[25:20]]) begin
 					rreads[0] = i_decode[19:14]; // RS1
 					rreads[1] = i_decode[25:20]; // RS2
-					rset = i_decode[13:8];  // RD
-					
+					rset = i_decode[13:8];  // RD	
 				end else begin
 					decode_stalled = 1;
 					fetch_stalled = 1;
@@ -181,6 +187,16 @@ module risci_core (
 			end 
 			`I_FORMAT: begin
 				rset = i_decode[13:8];  // RD
+			end
+			`S_FORMAT: begin
+				if (!rlocks_stored[i_decode[19:14]] && !rlocks_stored[i_decode[25:20]] && !rlocks_stored[i_decode[13:8]]) begin
+					rreads[0] = i_decode[19:14]; // RS1
+					rreads[1] = i_decode[25:20]; // RS2
+					rreads[2] = i_decode[13:8]; // RS3
+				end else begin
+					decode_stalled = 1;
+					fetch_stalled = 1;
+				end
 			end
 			default: begin end // TODO - INVI Exception here
 		endcase
@@ -203,6 +219,15 @@ module risci_core (
 					default: begin end // TODO - INVI Exception here
 				endcase
 			end 
+			`S_FORMAT: begin
+				case (i_execute[7:3])
+					`STORE_MAJOR: begin
+						ma_addr = routs[0] + (routs[1] * (1 << (i_execute[27:26])));
+						ma_data = routs[2];
+					end 
+					default: begin end // TODO - INVI Exception here
+				endcase
+			end
 			default: begin end // TODO - INVI Exception here
 		endcase
 	end
@@ -226,6 +251,17 @@ module risci_core (
 					default: begin end // TODO - INVI Exception here
 				endcase
 			end 
+			`S_FORMAT: begin
+				case (i_memaccess[7:3])
+					`STORE_MAJOR: begin
+						addr = ma_addr;
+						dataout = ma_data;
+						datalen = i_memaccess[27:26];
+						m_we = 1;
+					end 
+					default: begin end // TODO - INVI Exception here
+				endcase
+			end
 			default: begin end // TODO - INVI Exception here
 		endcase
 	end
@@ -241,7 +277,7 @@ module risci_core (
 					`LOAD_MAJOR: begin
 						rwrites[0] = i_writeback[13:8]; 
 
-						rins[0] = datain; // Assignment not working
+						rins[0] = datain;
 
 						rwposs[0] = i_writeback[30:28];
 						rwsizes[0] = i_writeback[27:26];
@@ -256,7 +292,7 @@ module risci_core (
 				case (i_writeback[7:3])
 					`LOAD_IMMEDIATE_MAJOR: begin
 						rwrites[0] = i_writeback[13:8]; 
-						rins[0] = {4{i_writeback[31:16]}};
+						rins[0] = {48'b0, {i_writeback[31:16]}};
 						rwposs[0] = {1'b0, i_writeback[15:14]};
 						rwsizes[0] = 'b01; // 16 bits
 						r_we = 1;
@@ -266,6 +302,14 @@ module risci_core (
 					default: begin end // TODO - INVI Exception here
 				endcase
 			end 
+			`S_FORMAT: begin
+				case (i_writeback[7:3])
+					`STORE_MAJOR: begin
+
+					end
+					default: begin end // TODO - INVI Exception here
+				endcase
+			end
 			default: begin end // TODO - INVI Exception here
 		endcase
 	end

@@ -22,25 +22,38 @@ module rfile #(
 	generate
 		genvar i;
 		for (i = 0; i < PARALLELACCESS; i++ ) begin
-			always @(posedge clk) begin
+			always_comb begin
 				if (we) begin
 					case (rwsizes[i])
-						'b00:
-							regs[rwrites[i]][rwposs[i]*8+:8] <= rins[i][7:0];
-						'b01:
-							regs[rwrites[i]][rwposs[i]*16+:16] <= rins[i][15:0];
-						'b10:
-							regs[rwrites[i]][rwposs[i]*32+:32] <= rins[i][31:0];
-						'b11:
-							regs[rwrites[i]] <= rins[i]; 
+						'b00: begin
+							regs[rwrites[i]][rwposs[i]*8+:8] = rins[i][7:0];
+							routs_r[i] = { 56'b0, rins[i][7:0]};
+						end
+						'b01: begin
+							regs[rwrites[i]][rwposs[i]*16+:16] = rins[i][15:0];
+							routs_r[i] = { 48'b0, rins[i][15:0]};
+						end
+						'b10: begin
+							regs[rwrites[i]][rwposs[i]*32+:32] = rins[i][31:0];
+							routs_r[i] = { 32'b0, rins[i][31:0]};
+						end
+						'b11: begin
+							regs[rwrites[i]] = rins[i]; 
+							routs_r[i] = rins[i]; 
+						end
 						default: begin end
 					endcase
+				end else begin
+					routs_r[i] = regs[rreads[i]];
+				end
+			end
+
+			always @( posedge clk ) begin
+				if (we) begin
 					$strobe("WRITE DONE: %x <= %x", rwrites[i], regs[rwrites[i]]);
 				end
-				routs_r[i] <= regs[rreads[i]];
 				$strobe("READ DONE: %x <= %x", routs_r[i], rreads[i]);
 			end
 		end
-			
 	endgenerate
 endmodule

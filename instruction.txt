@@ -22,6 +22,12 @@ Formats:
 		[26:31]:	MINOR
 	U:
 		[8:31]:		MINOR
+	B:
+		[8:9]:		TEST_CONDITION
+		[10:13]:	OFFSET[2:5]
+		[14:19]:	RS1
+		[20:25]:	RS2
+		[26:31]:	OFFSET[6:11]
 
 
 Major Reserved = 00000000
@@ -38,6 +44,11 @@ Major Load = 001_00001, R Format:
 			END = WIDTH * N
 
 			RD[BEGIN:END] <= (RS1 + (RS2 * ALIGN))
+
+Major Integer Arithmetic = 001_00010, R Format:
+	Minor Variants:
+		ADD = 000000:
+			RD = RS1 + RS2
 			
 Major Load Immediate = 010_00001, I Format:
 	Minor Variants:
@@ -48,11 +59,30 @@ Major Load Immediate = 010_00001, I Format:
 
 Major Store = 011_00001, S Format:
 	Minor Variants:
-		S(B,H,W,Q): 	XNNNSS:
+		S(B,H,W,Q): 	XXXXSS:
 			ALIGN = (2^S)
 			WIDTH = ALIGN * 8
 
-			BEGIN = WIDTH * (N+1)
-			END = WIDTH * N
+			BEGIN = 0
+			END = WIDTH
 
 			RS3[BEGIN:END] => (RS1 + (RS2 * ALIGN))
+
+Major Branch = 100_00001, B Format:
+	Minor Variants:
+		BEQ:	00:
+			if (RS1 == RS2) {
+				PC += OFFSET;
+			}
+		BNE:	01:
+			if (RS1 != RS2) {
+				PC += OFFSET;
+			}
+		BGE:	10:
+			if (RS1 >= RS2) {
+				PC += OFFSET;
+			}
+		BLT:	11:
+			if (RS1 < RS2) {
+				PC += OFFSET;
+			}

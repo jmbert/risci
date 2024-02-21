@@ -11,7 +11,7 @@ module ram #(
 	output [DLEN-1:0] out1,
 	output [DLEN2-1:0] out2,
 
-	output [DLEN-1:0] in,
+	input [DLEN-1:0] in,
 
 	input [1:0] len,
 	input we,
@@ -24,15 +24,30 @@ module ram #(
 	wire [9:0] addrreal2 = addr2[9:0];
 
 	initial begin
-	    	mem[7] =  8'b0001_010; 		// LIB X1, 0x0004
-		mem[6] =  8'b00_000001;
-		mem[5] =  8'b00000100;
+	    	mem[7] =  8'b0001_010; 		// LIB X2, 0x0050
+		mem[6] =  8'b00_000010;
+		mem[5] =  8'b01010000;
 		mem[4] =  8'b00000000;
 
-	    	mem[11] = 8'b0001_001;		// LW X2, X1, X0
-		mem[10] = 8'b01_000010;
-		mem[9] =  8'b0000_0000;
-		mem[8] =  8'b000010_00;
+	    	mem[11] = 8'b0001_010; 		// LIB X1, 0x0010
+		mem[10] = 8'b00_000001;
+		mem[9] =  8'b00010000;
+		mem[8] =  8'b00000000;
+
+	    	mem[15] = 8'b0001_011;		// SH X1, X2, X1
+		mem[14] = 8'b10_000001;
+		mem[13] = 8'b0000_0000;
+		mem[12] = 8'b000001_00;
+/*
+	    	mem[15] = 8'b0010_010;		// ADD X1, X1, 1
+		mem[14] = 8'b01_000010;
+		mem[13] = 8'b0000_0000;
+		mem[12] = 8'b000010_00;
+
+	    	mem[19] = 8'b0001_100;		// BEQ X2, X0, -2
+		mem[18] = 8'b01_000010;
+		mem[17] = 8'b0000_0000;
+		mem[16] = 8'b000010_00;*/
 	end
 
 	always_comb begin
@@ -57,17 +72,17 @@ module ram #(
 
 	always_latch begin
 		if (we) begin
-			mem[addrreal1] = in[7:0];
+			mem[addrreal1] = in[63:56];
 			if (len > 'b00) begin
-				mem[addrreal1+1] = in[15:8];
+				mem[addrreal1+1] = in[55:48];
 				if (len > 'b01) begin
-					mem[addrreal1+2] = in[23:16];
-					mem[addrreal1+3] = in[31:24];
+					mem[addrreal1+2] = in[47:40];
+					mem[addrreal1+3] = in[39:32];
 					if (len > 'b10) begin
-						mem[addrreal1+4] = in[39:32];
-						mem[addrreal1+5] = in[47:40];
-						mem[addrreal1+6] = in[55:48];
-						mem[addrreal1+7] = in[63:56];
+						mem[addrreal1+4] = in[31:24];
+						mem[addrreal1+5] = in[23:16];
+						mem[addrreal1+6] = in[15:8];
+						mem[addrreal1+7] = in[7:0];
 					end
 				end
 			end

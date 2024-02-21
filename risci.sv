@@ -10,9 +10,9 @@ module risci ();
   	  clk = 0;
   	  forever begin 
 		#5 clk = 1;
-	  	$write("\n\nPOSEDGE @ %0t\n", $time());
+	  	$strobe("\n\nPOSEDGE @ %0t", $time());
 		#5 clk = 0;
-	  	$write("NEGEDGE @ %0t\n\n\n", $time());
+	  	$strobe("NEGEDGE @ %0t\n\n", $time());
 	  end 
   	end
 
