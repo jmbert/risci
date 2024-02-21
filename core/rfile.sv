@@ -26,19 +26,19 @@ module rfile #(
 				if (we) begin
 					case (rwsizes[i])
 						'b00:
-							xregs[rwrites[i]][rwposs[i]*8+:8] = rins[i][7:0];
+							xregs[rwrites[i]][rwposs[i]*8+:8] <= rins[i][7:0];
 						'b01:
-							xregs[rwrites[i]][rwposs[i]*16+:16] = rins[i][15:0];
+							xregs[rwrites[i]][rwposs[i]*16+:16] <= rins[i][15:0];
 						'b10:
-							xregs[rwrites[i]][rwposs[i]*32+:32] = rins[i][31:0];
+							xregs[rwrites[i]][rwposs[i]*32+:32] <= rins[i][31:0];
 						'b11:
-							xregs[rwrites[i]] = rins[i]; 
+							xregs[rwrites[i]] <= rins[i]; 
 						default: begin end
 					endcase
-					$strobe("WRITE DONE: %x <= %x", rwrites[i], xregs[rwrites[i]]);
+					$strobe("WRITE DONE: %x <= %x (%x)", rwrites[i], xregs[rwrites[i]], rins[i]);
 				end
-				routs_r[i] = xregs[rreads[i]];
-				$strobe("READ DONE: %x <= %x", routs[i], rreads[i]);
+				routs_r[i] <= xregs[rreads[i]];
+				$strobe("READ DONE: %x <= %x", routs_r[i], rreads[i]);
 			end
 		end
 			
