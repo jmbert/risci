@@ -21,6 +21,10 @@
 
 `define LOAD_MAJOR 		5'b00001
 `define INT_A_MAJOR 		5'b00010
+`define INT_A_ADD		6'b000000
+`define INT_A_XOR		6'b000100
+`define INT_A_AND		6'b000101
+`define INT_A_OR		6'b000110
 
 `define LOAD_IMMEDIATE_MAJOR 	5'b00001
 
@@ -247,7 +251,17 @@ module risci_core (
 						ma_addr = routs[0] + (routs[1] * (1 << (i_execute[27:26])));
 					end 
 					`INT_A_MAJOR: begin
-						e_result = routs[0] + routs[1];
+						case (i_execute[31:26])
+							`INT_A_ADD:
+								e_result = routs[0] + routs[1];
+							`INT_A_XOR:
+								e_result = routs[0] ^ routs[1];
+							`INT_A_AND:
+								e_result = routs[0] & routs[1];
+							`INT_A_OR:
+								e_result = routs[0] | routs[1];
+							default: begin end
+						endcase
 					end
 					default: begin end // TODO - INVI Exception here
 				endcase

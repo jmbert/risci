@@ -49,6 +49,13 @@ Major Integer Arithmetic = 001 00010, R Format:
 	Minor Variants:
 		ADD = 000000:
 			RD = RS1 + RS2
+		XOR = 000100:
+			RD = RS1 ^ RS2
+		OR = 000101:
+			RD = RS1 | RS2
+		AND = 000110:
+			RD = RS1 & RS2
+		
 			
 Major Load Immediate = 010 00001, I Format:
 	Minor Variants:
