@@ -1,0 +1,21 @@
+- Register Forwarding
+	- Make lock_count an array of bitmaps, which show where it is locked by
+	- Instead of stalling on a set lock, instead switch rsX to use the value provided by that stage
+	- Find the correct stage by getting the least significant set bit of the bitmap at index X
+
+- Branch Flushing
+	- Flush (Stage): The input to the **next** must be set to a NOP
+	- Flushes should be unset after the flush has occured.
+	- Flushes take precedence over stalls
+
+- Exceptions
+	- Set ecode to the code
+	- When ecode is detected to have been set
+		- Flush and stall all previous pipeline stages.
+		- epc = PC + 4
+		- In fetch loop:
+			- PC = evec + (ecode * 4) 
+
+	- Exceptions to implement:
+		- Invalid Instruction
+		- Instruction Misalign
