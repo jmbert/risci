@@ -32,7 +32,7 @@ Formats:
 
 Major Reserved = 00000000
 
-Major Load = 001_00001, R Format:
+Major Load = 001 00001, R Format:
 	Minor Variants:
 		L(B,H,W,Q) = XNNNSS:
 			ALIGN = (1 << S)
@@ -45,19 +45,19 @@ Major Load = 001_00001, R Format:
 
 			RD[BEGIN:END] <= (RS1 + (RS2 * ALIGN))
 
-Major Integer Arithmetic = 001_00010, R Format:
+Major Integer Arithmetic = 001 00010, R Format:
 	Minor Variants:
 		ADD = 000000:
 			RD = RS1 + RS2
 			
-Major Load Immediate = 010_00001, I Format:
+Major Load Immediate = 010 00001, I Format:
 	Minor Variants:
 		LI(B,MB,MH,H) = NN:
 			BEGIN = 16 * (N+1)
 			END = 16 * N
 			RD[BEGIN:END] <= IMMEDIATE
 
-Major Store = 011_00001, S Format:
+Major Store = 011 00001, S Format:
 	Minor Variants:
 		S(B,H,W,Q): 	XXXXSS:
 			ALIGN = (2^S)
@@ -68,7 +68,7 @@ Major Store = 011_00001, S Format:
 
 			RS3[BEGIN:END] => (RS1 + (RS2 * ALIGN))
 
-Major Branch = 100_00001, B Format:
+Major Branch = 100 00001, B Format:
 	Minor Variants:
 		BEQ:	00:
 			if (RS1 == RS2) {

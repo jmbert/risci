@@ -201,6 +201,7 @@ module risci_core (
 					rreads[1] = i_decode[25:20]; // RS2
 					rset = i_decode[13:8];  // RD	
 				end else begin
+					rset = 0;
 					decode_stalled = 1;
 					fetch_stalled = 1;
 				end
